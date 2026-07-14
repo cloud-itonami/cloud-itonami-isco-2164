@@ -1,0 +1,11 @@
+[{:itonami.blueprint/social-impact [:sustainable-transportation :public-safety :urban-accessibility :public-engagement :traffic-equity]
+  :itonami.blueprint/domain :planning/transportation
+  :itonami.blueprint/required-technologies [:robotics :identity :forms :dmn :bpmn :audit-ledger]
+  :itonami.blueprint/isco-08 "2164"
+  :itonami.blueprint/name "Town and Traffic Planning Practice"
+  :itonami.blueprint/governor :traffic-governor
+  :itonami.blueprint/robotics true
+  :db/id -1
+  :itonami.blueprint/status :public-oss
+  :itonami.blueprint/id "cloud-itonami-isco-2164"
+  :itonami.blueprint/license "AGPL-3.0-or-later"}]
