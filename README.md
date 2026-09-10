@@ -63,15 +63,15 @@ human-in-the-loop interrupt/resume via checkpointing.
                                            +-> :hold               (:hard? true)
 ```
 
-- `src/traffic/store.cljc` — `Store` protocol + `MemStore`:
+- `src/traffic/store.kotoba` — `Store` protocol + `MemStore`:
   registered sites, committed planning records, an append-only audit ledger.
-- `src/traffic/advisor.cljc` — `Advisor` protocol; `mock-advisor`
+- `src/traffic/advisor.kotoba` — `Advisor` protocol; `mock-advisor`
   (deterministic, default) proposes a planning operation from a
   request; `llm-advisor` wraps a `langchain.model/ChatModel` — either
   way the advisor only ever produces a `:propose`-effect proposal,
   never a binding zoning change or traffic regulation, and LLM parse failures always yield
   `confidence 0.0` (forces escalation, never fabricated confidence).
-- `src/traffic/governor.cljc` — `TrafficGovernor/check`: a pure
+- `src/traffic/governor.kotoba` — `TrafficGovernor/check`: a pure
   function, wired as its own `:govern` node. Hard invariants
   (unregistered site, a proposal whose `:effect` isn't `:propose`,
   any attempt to issue a binding zoning change, set traffic regulations, or approve
@@ -83,7 +83,7 @@ human-in-the-loop interrupt/resume via checkpointing.
   (`actor/approve!`), matching the README's robotics-premise statement
   that binding planning authority always remains the
   planning authority's sole responsibility.
-- `src/traffic/actor.cljc` — `build-graph`, `run-request!`,
+- `src/traffic/actor.kotoba` — `build-graph`, `run-request!`,
   `approve!`: the `langgraph.graph/state-graph` wiring itself.
 
 ```bash
