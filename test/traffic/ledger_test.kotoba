@@ -1,0 +1,71 @@
+(ns traffic.ledger-test
+  "The chain, and what it can and cannot detect."
+  (:require [clojure.test :refer [deftest is testing]]
+            [traffic.ledger :as led]))
+
+(deftest append-stamps-position-and-link
+  (let [l (-> [] (led/append {:disposition :commit}) (led/append {:disposition :hold}))]
+    (is (= [0 1] (mapv :ledger/seq l)))
+    (is (zero? (:ledger/prev (first l))))
+    (is (= (:ledger/hash (first l)) (:ledger/prev (second l))))
+    (is (:ok? (led/verify l)))))
+
+(deftest verify-catches-an-edited-entry
+  ;; The defect this namespace exists for. On a77acee the ledger was a bare
+  ;; vector of maps, so this edit was undetectable.
+  (let [l (-> [] (led/append {:disposition :commit :record {:a 1}})
+              (led/append {:disposition :commit :record {:a 2}}))
+        tampered (assoc-in l [0 :record :a] 99)
+        v (led/verify tampered)]
+    (is (not (:ok? v)))
+    (is (= 0 (:broken-at v)))
+    (is (= :hash-mismatch (:reason v)))))
+
+(deftest verify-catches-a-reordering
+  (let [l (-> [] (led/append {:n 1}) (led/append {:n 2}))
+        swapped [(second l) (first l)]
+        v (led/verify swapped)]
+    (is (not (:ok? v)))
+    (is (= :seq-mismatch (:reason v)))))
+
+(deftest verify-catches-a-dropped-middle-entry
+  (let [l (-> [] (led/append {:n 1}) (led/append {:n 2}) (led/append {:n 3}))
+        dropped [(nth l 0) (nth l 2)]
+        v (led/verify dropped)]
+    (is (not (:ok? v)))
+    (is (= :seq-mismatch (:reason v)))))
+
+(deftest verify-does-not-claim-to-catch-truncation
+  ;; Stated as a test so the limit is a published property and not a
+  ;; surprise. A chain cannot detect entries it never saw; detecting
+  ;; truncation needs an external anchor this in-memory store does not have.
+  (let [l (-> [] (led/append {:n 1}) (led/append {:n 2}) (led/append {:n 3}))
+        truncated (vec (take 2 l))]
+    (is (:ok? (led/verify truncated))
+        "a truncated prefix still verifies -- this is the documented limit")))
+
+(deftest commit-entries-record-who-approved
+  ;; On a77acee a human-approved commit and an automatic one produced two
+  ;; identical maps. These two must not be equal after the seq/hash stamps
+  ;; are stripped.
+  (let [a (led/commit-entry {:site-id "s"} :actor)
+        h (led/commit-entry {:site-id "s"} :human)]
+    (is (= :actor (:approved-by a)))
+    (is (= :human (:approved-by h)))
+    (is (not= a h))))
+
+(deftest hold-entries-carry-their-reason
+  (let [e (led/hold-entry {:hard? true :violations [{:rule :no-site}]})]
+    (is (= :hold (:disposition e)))
+    (is (= :none (:approved-by e)))
+    (is (= [{:rule :no-site}] (get-in e [:verdict :violations])))))
+
+(deftest chain-hash-is-deterministic-and-in-range
+  (testing "the same input hashes the same way twice, and stays inside the
+           range both hosts can represent exactly"
+    (is (= (led/chain-hash 0 {:a 1}) (led/chain-hash 0 {:a 1})))
+    (is (not= (led/chain-hash 0 {:a 1}) (led/chain-hash 1 {:a 1})))
+    (is (< (led/chain-hash 12345 {:a 1 :b "x"}) 2147483647))))
+
+(deftest empty-ledger-verifies
+  (is (:ok? (led/verify []))))

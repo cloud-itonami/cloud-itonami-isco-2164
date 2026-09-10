@@ -1,5 +1,5 @@
 (ns traffic.actor-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is]]
             [traffic.actor :as actor]
             [traffic.store :as store]))
 

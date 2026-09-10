@@ -1,0 +1,58 @@
+(ns traffic.facts-test
+  "Well-formedness, including the two shapes that defeated the shipped
+  governor on a77acee."
+  (:require [clojure.test :refer [deftest is testing]]
+            [traffic.facts :as facts]))
+
+(deftest a-site-record-must-identify-itself
+  ;; The measured defect: MemStore keys sites by (:site-id site), so
+  ;; registering {} files a record under the key nil, and a request carrying
+  ;; no :site-id then resolves to it. `(nil? site-record)` was true of the
+  ;; store's return value and false of the question being asked.
+  (is (seq (facts/site-record-violations {})))
+  (is (= :site-without-id (:rule (first (facts/site-record-violations {})))))
+  (is (seq (facts/site-record-violations {:site-id "   "})))
+  (is (seq (facts/site-record-violations {:site-id 7})))
+  (is (seq (facts/site-record-violations "not a map")))
+  (is (empty? (facts/site-record-violations {:site-id "s1"}))))
+
+(deftest a-request-must-name-a-site
+  (is (seq (facts/request-violations {})))
+  (is (= :request-without-site-id (:rule (first (facts/request-violations {})))))
+  (is (empty? (facts/request-violations {:site-id "s1"}))))
+
+(deftest the-confidence-envelope-is-checked-before-it-is-compared
+  ;; The second measured defect: :confidence "high" threw a
+  ;; ClassCastException out of governor/check. A governor that throws has not
+  ;; refused -- it has failed to answer.
+  (testing "present but unusable"
+    (is (seq (facts/proposal-violations {:op :x :confidence "high"})))
+    (is (= :confidence-out-of-range
+           (:rule (first (facts/proposal-violations {:op :x :confidence "high"})))))
+    (is (seq (facts/proposal-violations {:op :x :confidence 1.5})))
+    (is (seq (facts/proposal-violations {:op :x :confidence -3}))))
+  (testing "absent is legitimate -- it reads as 0.0 and escalates"
+    (is (empty? (facts/proposal-violations {:op :x}))))
+  (testing "in range"
+    (is (empty? (facts/proposal-violations {:op :x :confidence 0.0})))
+    (is (empty? (facts/proposal-violations {:op :x :confidence 1.0})))))
+
+(deftest a-proposal-must-carry-a-keyword-op
+  (is (seq (facts/proposal-violations {:op "draft"})))
+  (is (seq (facts/proposal-violations {})))
+  (is (seq (facts/proposal-violations "not a map"))))
+
+(deftest a-payload-when-present-must-be-a-map
+  (is (seq (facts/proposal-violations {:op :x :payload "no"})))
+  (is (empty? (facts/proposal-violations {:op :x :payload {:a 1}}))))
+
+(deftest vocabulary-separates-undeclared-from-reserved
+  (testing "reserved names an authority boundary and quotes its reason"
+    (let [v (facts/vocabulary-violations {:op :issue-zoning-change})]
+      (is (= :no-binding-authority (:rule (first v))))
+      (is (string? (:detail (first v))))))
+  (testing "undeclared is a vocabulary error, reported as a different rule"
+    (let [v (facts/vocabulary-violations {:op :bulldoze-the-neighbourhood})]
+      (is (= :undeclared-operation (:rule (first v))))))
+  (testing "supported passes"
+    (is (empty? (facts/vocabulary-violations {:op :draft-planning-scenario})))))

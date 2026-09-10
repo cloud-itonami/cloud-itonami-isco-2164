@@ -1,0 +1,57 @@
+(ns traffic.sim-test
+  "The harness, and the controls that show the harness can fail."
+  (:require [clojure.test :refer [deftest is]]
+            [traffic.sim :as sim]))
+
+(deftest scenario-run-passes
+  (let [r (sim/run)]
+    (is (:ok? r))
+    (is (empty? (:mismatches r)))
+    (is (empty? (:wrote-anyway r)))
+    (is (empty? (:ledger-breaks r)))))
+
+(deftest run-demonstrates-refusals
+  ;; The whole point of the harness. A governed actor's claim is that there
+  ;; exist actions it refuses; a run with zero refusals has shown nothing.
+  (is (pos? (:refusals (sim/run)))))
+
+(deftest a-table-that-refuses-nothing-fails
+  ;; The control. Without this, `scenario-run-passes` would keep passing
+  ;; after someone deleted every refusing scenario -- the harness would print
+  ;; green while demonstrating nothing, which is the exact shape it exists to
+  ;; catch.
+  (with-redefs [sim/scenarios [{:name :clean-only
+                                :request {:site-id "sim-site-1"
+                                          :op :draft-planning-scenario}
+                                :expect :commit
+                                :why "no refusal in this table"}]]
+    (let [r (sim/run)]
+      (is (zero? (:refusals r)))
+      (is (not (:ok? r)))
+      (is (re-find #"REFUSING TO REPORT A PASS" (sim/report r))))))
+
+(deftest a-wrong-expectation-fails
+  ;; The second control: the table is a specification, so a scenario whose
+  ;; actual phase differs must fail rather than be logged.
+  (with-redefs [sim/scenarios [{:name :mislabelled
+                                :request {:site-id "no-such-site"
+                                          :op :draft-planning-scenario}
+                                :expect :commit
+                                :why "this actually holds"}]]
+    (let [r (sim/run)]
+      (is (not (:ok? r)))
+      (is (= 1 (count (:mismatches r))))
+      (is (re-find #"BAD" (sim/report r))))))
+
+(deftest every-refusal-left-the-store-unwritten
+  ;; Reaching the right phase is not the same as not writing. This asserts
+  ;; the consequence directly, because a refusal that still committed a
+  ;; record would otherwise hide inside a matching phase.
+  (let [r (sim/run)]
+    (doseq [x (filter :refusal? (:results r))]
+      (is (not (:wrote? x)) (str (:name x) " refused but wrote a record")))))
+
+(deftest every-run-left-a-verifying-ledger
+  (let [r (sim/run)]
+    (doseq [x (:results r)]
+      (is (:ok? (:ledger-verify x)) (str (:name x) " left a broken ledger")))))

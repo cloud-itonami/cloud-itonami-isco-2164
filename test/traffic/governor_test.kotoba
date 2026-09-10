@@ -1,5 +1,5 @@
 (ns traffic.governor-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is]]
             [traffic.store :as store]
             [traffic.governor :as governor]))
 
@@ -79,3 +79,127 @@
     (store/append-ledger! st {:disposition :commit})
     (is (= 1 (count (store/records-of st "site-1"))))
     (is (= 1 (count (store/ledger st))))))
+
+;; ── The refusals this governor could not make before 2026-09-11 ────────────
+;;
+;; The old `check` blocked three named ops and admitted every op it had not
+;; been told about, treated any non-nil store return as provenance, and
+;; compared :confidence without establishing it was a number.
+;;
+;; Measured by restoring src/traffic/governor.kotoba from a77acee and running
+;; this suite: 17 failures / 1 error. Four of these tests discriminate, and
+;; the error is the ClassCastException raised from inside the old `check`:
+;;
+;;     hard-on-undeclared-operation                   FAIL
+;;     a-blank-registration-does-not-establish-...    FAIL
+;;     a-site-registered-without-an-id-is-not-...     FAIL
+;;     hard-outranks-escalation-in-the-verdict        FAIL
+;;     a-malformed-confidence-is-refused-not-thrown   ERROR (Numbers.java:253)
+;;
+;; The remaining four pass against both governors, and are here on purpose:
+;; reserved-ops-are-hard-not-escalated and a-non-propose-effect-... assert
+;; behaviour that must NOT change while the rules move file, and
+;; an-absent-confidence-escalates-... and a-clean-declared-proposal-still-
+;; commits are the containment controls. A governor that refused everything
+;; would satisfy all four discriminating tests above and be exactly as
+;; useless as one that refused nothing.
+
+(deftest hard-on-undeclared-operation
+  ;; Measured on a77acee, against a registered site with :effect :propose and
+  ;; :confidence 0.95:
+  ;;   op=:bulldoze-the-neighbourhood  ok?=true  hard?=false
+  ;;   op=:demolish-every-crossing     ok?=true  hard?=false
+  ;;   op=:seize-the-land              ok?=true  hard?=false
+  (let [st (fresh-store)]
+    (doseq [op [:bulldoze-the-neighbourhood :demolish-every-crossing :seize-the-land]]
+      (let [v (governor/check {:site-id "site-1"} {}
+                              {:op op :effect :propose :confidence 0.95} st)]
+        (is (:hard? v) (str op " must be hard-blocked as undeclared"))
+        (is (not (:ok? v)))
+        (is (some #(= :undeclared-operation (:rule %)) (:violations v)))))))
+
+(deftest reserved-ops-are-hard-not-escalated
+  ;; Escalation would imply a human could approve the actor doing this. No
+  ;; human can delegate a binding zoning change to an actor, so it must hold.
+  (let [st (fresh-store)]
+    (doseq [op [:issue-zoning-change :set-traffic-regulation :approve-development]]
+      (let [v (governor/check {:site-id "site-1"} {}
+                              {:op op :effect :propose :confidence 0.99} st)]
+        (is (:hard? v))
+        (is (not (:escalate? v)) (str op " must hold, never escalate"))
+        (is (some #(= :no-binding-authority (:rule %)) (:violations v)))))))
+
+(deftest a-blank-registration-does-not-establish-provenance
+  ;; Measured on a77acee:
+  ;;   (register-site! st {})
+  ;;   (check {} {} {:op :draft-planning-scenario :effect :propose
+  ;;                 :confidence 0.95} st)
+  ;;   => {:ok? true :violations []}
+  ;; MemStore keys sites by (:site-id site), so {} files a record under nil,
+  ;; and a request with no :site-id resolved to it.
+  (let [st (store/mem-store)]
+    (store/register-site! st {})
+    (let [v (governor/check {} {} {:op :draft-planning-scenario
+                                   :effect :propose :confidence 0.95} st)]
+      (is (:hard? v))
+      (is (not (:ok? v)))
+      (is (some #(= :request-without-site-id (:rule %)) (:violations v))))))
+
+(deftest a-site-registered-without-an-id-is-not-provenance
+  (let [st (store/mem-store)]
+    (store/register-site! st {:site-id "  "})
+    (let [v (governor/check {:site-id "  "} {}
+                            {:op :draft-planning-scenario
+                             :effect :propose :confidence 0.95} st)]
+      (is (:hard? v)))))
+
+(deftest a-malformed-confidence-is-refused-not-thrown
+  ;; Measured on a77acee: :confidence "high" threw a ClassCastException out
+  ;; of check. A governor that throws has not refused -- the caller cannot
+  ;; tell a refusal from a crash.
+  (let [st (fresh-store)]
+    (doseq [c ["high" 1.5 -3 [] {}]]
+      (let [v (governor/check {:site-id "site-1"} {}
+                              {:op :draft-planning-scenario
+                               :effect :propose :confidence c} st)]
+        (is (:hard? v) (str "confidence " (pr-str c) " must be refused"))
+        (is (some #(= :confidence-out-of-range (:rule %)) (:violations v)))))))
+
+(deftest an-absent-confidence-escalates-rather-than-refusing
+  ;; The mirror of the test above: absent is legitimate, reads as 0.0, and
+  ;; therefore falls below the floor. Escalation, not a hard block.
+  (let [st (fresh-store)
+        v (governor/check {:site-id "site-1"} {}
+                          {:op :draft-planning-scenario :effect :propose} st)]
+    (is (not (:hard? v)))
+    (is (:escalate? v))
+    (is (zero? (:confidence v)))))
+
+(deftest hard-outranks-escalation-in-the-verdict
+  ;; A proposal that is both undeclared AND low-confidence must hold.
+  (let [st (fresh-store)
+        v (governor/check {:site-id "site-1"} {}
+                          {:op :seize-the-land :effect :propose :confidence 0.1} st)]
+    (is (:hard? v))
+    (is (not (:escalate? v)))))
+
+(deftest a-non-propose-effect-is-still-hard-blocked
+  ;; Unchanged behaviour, asserted here because the rule moved file.
+  (let [st (fresh-store)
+        v (governor/check {:site-id "site-1"} {}
+                          {:op :draft-planning-scenario :effect :actuate
+                           :confidence 0.95} st)]
+    (is (:hard? v))
+    (is (some #(= :no-actuation (:rule %)) (:violations v)))))
+
+(deftest a-clean-declared-proposal-still-commits
+  ;; The containment control. A governor that refused everything would pass
+  ;; every test above and be just as useless as one that refused nothing.
+  (let [st (fresh-store)
+        v (governor/check {:site-id "site-1"} {}
+                          {:op :analyze-traffic-data :effect :propose
+                           :confidence 0.95} st)]
+    (is (:ok? v))
+    (is (not (:hard? v)))
+    (is (not (:escalate? v)))
+    (is (empty? (:violations v)))))

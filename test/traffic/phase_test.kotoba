@@ -1,0 +1,32 @@
+(ns traffic.phase-test
+  "The routing rule, extracted from the graph so it can be asserted without
+  building one."
+  (:require [clojure.test :refer [deftest is testing]]
+            [traffic.phase :as phase]))
+
+(deftest routes-each-verdict
+  (is (= :hold (phase/of-verdict {:hard? true})))
+  (is (= :request-approval (phase/of-verdict {:escalate? true})))
+  (is (= :commit (phase/of-verdict {:ok? true}))))
+
+(deftest hard-outranks-escalate
+  ;; The whole safety claim. A proposal that is both hard-blocked and
+  ;; low-confidence must hold, not escalate: escalating it would put a
+  ;; question to a human that they have no authority to answer yes to.
+  (is (= :hold (phase/of-verdict {:hard? true :escalate? true}))))
+
+(deftest only-commit-writes
+  (is (phase/writes? :commit))
+  (is (not (phase/writes? :hold)))
+  (is (not (phase/writes? :request-approval))))
+
+(deftest both-non-writing-phases-are-refusals
+  (testing "request-approval is a refusal to act without a human, not an
+           approval-in-waiting -- traffic.sim counts it as one"
+    (is (phase/refusal? :hold))
+    (is (phase/refusal? :request-approval))
+    (is (not (phase/refusal? :commit)))))
+
+(deftest approved-commit-is-recognised-by-its-predecessor
+  (is (phase/approved-commit? :request-approval))
+  (is (not (phase/approved-commit? :commit))))

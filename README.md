@@ -71,24 +71,61 @@ human-in-the-loop interrupt/resume via checkpointing.
   way the advisor only ever produces a `:propose`-effect proposal,
   never a binding zoning change or traffic regulation, and LLM parse failures always yield
   `confidence 0.0` (forces escalation, never fabricated confidence).
+- `src/traffic/operation.kotoba` — the **closed vocabulary**: `supported`
+  (what the actor may propose) and `reserved` (what belongs to the human
+  planner and the planning authority). This is an allowlist, and it is what
+  makes the governor a boundary rather than three examples.
+- `src/traffic/facts.kotoba` — well-formedness of the site record, the
+  request and the proposal envelope. Provenance is asked of the *record*, not
+  of whether the store returned something.
 - `src/traffic/governor.kotoba` — `TrafficGovernor/check`: a pure
   function, wired as its own `:govern` node. Hard invariants
-  (unregistered site, a proposal whose `:effect` isn't `:propose`,
-  any attempt to issue a binding zoning change, set traffic regulations, or approve
-  a development)
-  always route to `:hold`. Escalation invariants (public safety flags,
-  safety-critical traffic systems, or low advisor confidence) always route to
-  `:request-approval` — an `interrupt-before` node that the graph
+  (unregistered or unidentified site, a proposal whose `:effect` isn't
+  `:propose`, a reserved operation, an **undeclared** operation, a malformed
+  envelope) always route to `:hold`. Escalation invariants (public safety
+  flags, safety-critical traffic systems, or low advisor confidence) always
+  route to `:request-approval` — an `interrupt-before` node that the graph
   checkpoints and only resumes on explicit human approval
   (`actor/approve!`), matching the README's robotics-premise statement
   that binding planning authority always remains the
   planning authority's sole responsibility.
+- `src/traffic/phase.kotoba` — the verdict → phase routing rule, extracted
+  from the graph so it can be asserted without building one. `:hard?` is
+  checked before `:escalate?`: a proposal that is both must hold, because
+  escalating it would put a question to a human that they have no authority
+  to answer yes to.
+- `src/traffic/ledger.kotoba` — hash-chained append-only entries. Every
+  entry carries `:ledger/seq`, `:ledger/prev` and `:ledger/hash`, so a
+  dropped or reordered entry is detectable; every commit records whether it
+  was approved by `:human` or by `:actor`. (A *truncated* ledger still
+  verifies — see the namespace docstring for why that limit is real.)
 - `src/traffic/actor.kotoba` — `build-graph`, `run-request!`,
   `approve!`: the `langgraph.graph/state-graph` wiring itself.
+- `src/traffic/sim.kotoba` — the governed-scenario harness: a table of
+  requests run through the **real graph**, asserting the phase each reaches.
+
+## Running it
 
 ```bash
-clojure -M:test
+clojure -M:test    # 54 tests / 187 assertions
+clojure -M:sim     # the governed-scenario harness
 ```
+
+`clojure -M:test` runs `run_tests.kotoba`, not `cognitect.test-runner`. The
+2026-09-10 rename moved every source and test to `.kotoba`, which
+`clojure.tools.namespace` does not resolve — the old runner then found
+nothing, ran nothing and exited 0. The suite had been dark since that commit.
+The runner exits `2` (not `0`, not `1`) when it cannot answer: no sources, no
+test namespaces, a source that will not read, or a run that came in **below
+the count published here**. That count is load-bearing; a floor that silently
+becomes zero is not a floor.
+
+`clojure -M:sim` exits non-zero when the scenario table demonstrated **no
+refusal**. A governed actor's claim is not that it acts — it is that there
+exist actions it refuses, so a harness that ran only clean scenarios would
+print green while showing nothing.
+
+54 tests / 187 assertions
 
 This is what backs this repo's `:maturity :implemented` entry in
 [`kotoba-lang/occupation`](https://github.com/kotoba-lang/occupation).

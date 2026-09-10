@@ -1,0 +1,40 @@
+(ns traffic.operation-test
+  "The vocabulary, and the boundary between 'not declared' and 'not yours'."
+  (:require [clojure.set :as set]
+            [clojure.test :refer [deftest is testing]]
+            [traffic.operation :as op]))
+
+(deftest supported-and-reserved-are-disjoint
+  ;; If an op were in both, `declared?` would be true and the governor's two
+  ;; refusal reasons would race. Asserted rather than assumed, because the two
+  ;; maps are edited independently.
+  (is (empty? (set/intersection
+               (set (keys op/supported))
+               (set (keys op/reserved))))))
+
+(deftest advisor-vocabulary-is-declared
+  ;; Every op traffic.advisor can emit must be declared, or the actor would
+  ;; propose things its own governor refuses as undeclared.
+  (doseq [o [:draft-planning-scenario :analyze-traffic-data
+             :flag-public-safety-concern :schedule-public-consultation]]
+    (is (op/supported? o) (str o " must be a supported operation"))))
+
+(deftest reserved-ops-name-the-authority-boundary
+  (doseq [o [:issue-zoning-change :set-traffic-regulation :approve-development]]
+    (is (op/reserved? o))
+    (is (not (op/supported? o)))
+    (is (string? (op/reserved-reason o))
+        (str o " must say why it is reserved -- the refusal quotes it"))))
+
+(deftest undeclared-is-neither
+  (testing "an op nobody declared is not silently admitted"
+    (is (not (op/declared? :bulldoze-the-neighbourhood)))
+    (is (not (op/supported? :bulldoze-the-neighbourhood)))
+    (is (not (op/reserved? :bulldoze-the-neighbourhood)))))
+
+(deftest escalation-is-a-property-of-the-operation
+  (is (op/escalates? :flag-public-safety-concern))
+  (is (not (op/escalates? :draft-planning-scenario)))
+  (testing "an undeclared op is not reported as escalating -- the governor
+           hard-blocks it first, so a false here is not an admission"
+    (is (not (op/escalates? :bulldoze-the-neighbourhood)))))
