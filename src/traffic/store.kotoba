@@ -14,7 +14,17 @@
                concern, public consultation session) — written ONLY via
                commit-record!, never mutated in place
     ledger   — an append-only audit trail of every proposal/verdict/
-               disposition, regardless of outcome (commit or hold)")
+               disposition, regardless of outcome (commit or hold)
+
+  The ledger is chained: `append-ledger!` routes every entry through
+  `traffic.ledger/append`, which stamps `:ledger/seq`, `:ledger/prev` and
+  `:ledger/hash`. That is what makes 'append-only' a property of the artifact
+  rather than of the code path that produced it — see `traffic.ledger`. The
+  protocol signature is unchanged; callers still pass a plain map."
+  ;; alias is `led`, not `ledger`: this namespace also defines a protocol
+  ;; method named `ledger`, and shadowing the two names in one file is
+  ;; needless work for the next reader.
+  (:require [traffic.ledger :as led]))
 
 (defprotocol Store
   (site [s site-id])
@@ -34,7 +44,7 @@
   (commit-record! [s record]
     (swap! a update :records (fnil conj []) record) s)
   (append-ledger! [s fact]
-    (swap! a update :ledger (fnil conj []) fact) s))
+    (swap! a update :ledger (fnil led/append []) fact) s))
 
 (defn mem-store
   ([] (mem-store {}))
