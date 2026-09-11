@@ -107,11 +107,11 @@ human-in-the-loop interrupt/resume via checkpointing.
 ## Running it
 
 ```bash
-clojure -M:test    # 54 tests / 187 assertions
-clojure -M:sim     # the governed-scenario harness
+kbb -M:test    # 54 tests / 187 assertions
+kbb -M:sim     # the governed-scenario harness
 ```
 
-`clojure -M:test` runs `run_tests.kotoba`, not `cognitect.test-runner`. The
+`kbb -M:test` runs `run_tests.kotoba`, not `cognitect.test-runner`. The
 2026-09-10 rename moved every source and test to `.kotoba`, which
 `clojure.tools.namespace` does not resolve — the old runner then found
 nothing, ran nothing and exited 0. The suite had been dark since that commit.
@@ -120,7 +120,7 @@ test namespaces, a source that will not read, or a run that came in **below
 the count published here**. That count is load-bearing; a floor that silently
 becomes zero is not a floor.
 
-`clojure -M:sim` exits non-zero when the scenario table demonstrated **no
+`kbb -M:sim` exits non-zero when the scenario table demonstrated **no
 refusal**. A governed actor's claim is not that it acts — it is that there
 exist actions it refuses, so a harness that ran only clean scenarios would
 print green while showing nothing.
