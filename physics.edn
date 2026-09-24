@@ -1,0 +1,33 @@
+;; What this vertical's robot physically does, declared for
+;; kotoba.robotics.process (kotoba-lang/robotics). `kbb -M:physics` runs it.
+;;
+;; README "Robotics premise": a planning-support robot prepares zoning
+;; scenarios, traffic analyses and public safety assessments for town and
+;; traffic planners (ISCO 2164). The physical systems such plans size: an
+;; autonomous shuttle running stop to stop on a planned route, and the storm
+;; drain carrying road runoff away.
+;;
+;; Every number without a cited source is marked `estimate` in its :basis.
+;; Replacing an estimate with a sourced value is this bot's growth work.
+{:physics/schema "itonami.physical-ai.spec.v1"
+ :repo "cloud-itonami/cloud-itonami-isco-2164"
+ :cases
+ [{:id :shuttle-stop-spacing
+   :kind :transport
+   :procedure "autonomous shuttle runs from one stop to the next at 30 km/h with passenger-comfort acceleration"
+   :params {:mass-kg 3500.0 :payload-kg 1000.0 :v-max-mps 8.3 :a-max-mps2 1.0
+            :brake-decel-mps2 1.3 :drive-force-n 12000.0 :crr 0.012
+            :cog-height-m 1.0 :support-half-length-m 1.2 :max-time-s 900.0}
+   :sweep {:param :distance-m :values [200.0 300.0 400.0 600.0 800.0]}
+   :quantity :cycle-time-s
+   :limit {:max 60.0 :basis "estimate: one minute between stops for a feeder line with a 10-minute end-to-end target"}
+   :boundary {:lo 100.0 :hi 1200.0}}
+  {:id :road-storm-drain
+   :kind :pipe-flow
+   :procedure "300 mm concrete storm drain carries road runoff 100 m to the outfall"
+   :params {:diameter-m 0.30 :length-m 100.0 :roughness-m 3.0e-4
+            :density-kg-m3 999.0 :viscosity-pa-s 1.3e-3 :pump-efficiency 1.0 :elevation-m 0.0}
+   :sweep {:param :q-m3s :values [0.02 0.05 0.08 0.12 0.16]}
+   :quantity :head-m
+   :limit {:max 1.0 :basis "estimate: 1 m of fall available between the inlet grate and the outfall over the 100 m run"}
+   :boundary {:lo 0.01 :hi 0.25}}]}
