@@ -1,6 +1,6 @@
 # Governance
 
-This project is governed by cloud-itonami's open occupation pattern (ADR-2607011000, CLAUDE.md Actors section). The Traffic Governor is the independent safety layer gating all planning proposals — the public operator console displays all proposals, verdicts, and audit trails live.
+This project is governed by cloud-itonami's open occupation pattern (ADR-2607011000, AGENTS.md Actors section). The Traffic Governor is the independent safety layer gating all planning proposals — the public operator console displays all proposals, verdicts, and audit trails live.
 
 ## Decision Process
 
